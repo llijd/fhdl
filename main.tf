@@ -36,7 +36,7 @@ resource "alicloud_alb_load_balancer" "alb" {
 
   # 必填：计费配置
   load_balancer_billing_config {
-    pay_type = "PostPay" # 按量付费
+    pay_type = "PayAsYouGo" # 按量付费
   }
 
   dynamic "zone_mappings" {
@@ -85,4 +85,35 @@ resource "alicloud_alb_listener" "http_listener" {
       }
     }
   }
+}
+# 输出找到的 ECS 信息
+output "ecs_list_debug" {
+  description = "已匹配到的 ECS 实例及其可用区和交换机"
+  value = [
+    for i in data.alicloud_instances.ecs_list.instances : {
+      id         = i.id
+      zone_id    = i.zone_id
+      vswitch_id = lookup(
+        { for vsw in data.alicloud_vswitches.vsw_list.vswitches : vsw.zone_id => vsw.id },
+        i.zone_id,
+        "未匹配到交换机"
+      )
+    }
+  ]
+}
+
+# 输出 ALB 的基本信息
+output "alb_info" {
+  description = "ALB 基本信息"
+  value = {
+    alb_id   = alicloud_alb_load_balancer.alb.id
+    alb_name = alicloud_alb_load_balancer.alb.load_balancer_name
+    address  = alicloud_alb_load_balancer.alb.dns_name
+  }
+}
+
+# 输出后端服务器组 ID
+output "alb_backend_group_id" {
+  description = "ALB 后端服务器组 ID"
+  value       = alicloud_alb_server_group.backend_group.id
 }
