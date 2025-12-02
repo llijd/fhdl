@@ -1,5 +1,5 @@
 provider "alicloud" {
-  region = "cn-shenzhen"
+  region = "cn-beijing"
 }
 
 # 1. 获取已有 ECS 列表（按 VPC 或标签过滤）
@@ -19,7 +19,7 @@ locals {
     for i in data.alicloud_instances.ecs_list.instances : {
       zone_id     = i.zone_id
       v_switch_id = lookup(
-        { for vsw in data.alicloud_vswitches.vswitches : vsw.zone_id => vsw.id },
+        { for vsw in data.alicloud_vswitches.vsw_list.vswitches : vsw.zone_id => vsw.id },
         i.zone_id,
         null
       )
@@ -43,15 +43,26 @@ resource "alicloud_alb_load_balancer" "alb" {
   }
 }
 
-# 5. 创建后端服务器组
+# 5. 创建后端服务器组（直接在 servers 中绑定 ECS）
 resource "alicloud_alb_server_group" "backend_group" {
   server_group_name = "ecs-backend-group"
   vpc_id            = "vpc-xxxxxx"
   protocol          = "HTTP"
+
   health_check_config {
     health_check_enabled  = true
     health_check_protocol = "HTTP"
     health_check_path     = "/"
+  }
+
+  dynamic "servers" {
+    for_each = data.alicloud_instances.ecs_list.instances
+    content {
+      server_id   = servers.value.id
+      server_type = "Ecs"
+      port        = 80
+      weight      = 100
+    }
   }
 }
 
@@ -60,6 +71,7 @@ resource "alicloud_alb_listener" "http_listener" {
   listener_protocol = "HTTP"
   listener_port     = 80
   load_balancer_id  = alicloud_alb_load_balancer.alb.id
+
   default_actions {
     type = "ForwardGroup"
     forward_group_config {
@@ -68,14 +80,4 @@ resource "alicloud_alb_listener" "http_listener" {
       }
     }
   }
-}
-
-# 7. 批量绑定 ECS 到后端组
-resource "alicloud_alb_server_group_server_attachment" "ecs_backend" {
-  for_each        = { for i in data.alicloud_instances.ecs_list.instances : i.id => i }
-  server_group_id = alicloud_alb_server_group.backend_group.id
-  server_id       = each.value.id
-  server_type     = "Ecs"
-  port            = 80
-  weight          = 100
 }
